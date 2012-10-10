@@ -1,0 +1,6 @@
+Revision history for Perl extension Test::Daemon::Object.
+
+0.01  Tue Jul 12 15:17:49 2011
+	- original version; created by h2xs 1.23 with options
+		-AX -n Test::Daemon::Object -b 5.8.1
+

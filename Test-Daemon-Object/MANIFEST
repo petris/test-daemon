@@ -1,0 +1,6 @@
+Changes
+Makefile.PL
+MANIFEST
+README
+t/Test-Daemon-Object.t
+lib/Test/Daemon/Object.pm

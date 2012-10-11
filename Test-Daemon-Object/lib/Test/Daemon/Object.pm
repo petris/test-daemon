@@ -1,6 +1,6 @@
 package Test::Daemon::Object;
 use strict;
-use Carp;
+use Carp qw(croak cluck);
 use JSON;
 
 our $config;
@@ -36,7 +36,7 @@ sub initialize {
 	}
 
 	if (defined $ENV{TESTD_DEBUG} and $ENV{TESTD_DEBUG} > 2) {
-		my $init = join ', ', map "$_=>$args{$_}", sort keys %args;
+		my $init = join ', ', map "$_=>" . (defined $args{$_} ? $args{$_} : 'undef'), sort keys %args;
 		$self->log("Initializing $self as $ref. ARGS: $init");
 	}
 
@@ -73,6 +73,15 @@ sub expand_vars($) {
 
 sub loadconf {
 	if (defined $ENV{TESTD_CONFIG}) {
+		my $config_dir;
+		if ($ENV{TESTD_CONFIG} =~ /^\//) {
+			$config_dir = $ENV{TESTD_CONFIG};
+		} else {
+			$config_dir = $ENV{PWD} . '/' . $ENV{TESTD_CONFIG};
+		}
+		$config_dir =~ s/[^\/]*$//;
+		$ENV{TESTD_CONFIG_DIR} = $config_dir;
+
 		open F, $ENV{TESTD_CONFIG} or croak 'Failed to load config file';
 		$config = from_json(join '', map expand_vars($_), grep {not /^\s*\/\//} <F>);
 		close F;
@@ -109,7 +118,11 @@ sub err {
 		shift;
 	}
 	#$Carp::Internal{'Test::Daemon::Object'}++;
-	croak @_;
+	if (defined $ENV{TESTD_DEBUG} && $ENV{TESTD_DEBUG} > 2) {
+		cluck @_;
+	} else {
+		croak @_;
+	}
 }
 
 1;
@@ -210,5 +223,12 @@ Report error. If the error is fatal, use 'CRITICAL' as the first argument.
 
 =head1 AUTHOR
 
-Petr Malat
+Petr Malat E<lt>oss@malat.bizE<gt>
 
+=head1 COPYRIGHT
+
+Copyright (c) 2011 - 2012 by Petr Malat E<lt>oss@malat.bizE<gt>
+
+This program is free software; you can redistribute it and/or modify it under
+the same terms as Perl itself.
+See F<http://www.perl.com/perl/misc/Artistic.html>.

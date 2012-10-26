@@ -1,8 +1,13 @@
 package Test::Daemon;
 use strict;
 
+our $VERSION = '0.02'
 
 __END__
+
+=head1 NAME
+
+Test::Daemon - Framework for test execution
 
 =head1 Information provided to loggers by framework
 

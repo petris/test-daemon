@@ -5,7 +5,7 @@ use Test::Daemon::Object;
 use File::Path qw(make_path);
 use List::Util qw(first max maxstr min minstr reduce shuffle sum);
 use AnyEvent;
-use AnyEvent::Subprocess;
+use AnyEvent::Process;
 use autodie;
 
 our @ISA = qw(Test::Daemon::Object);
@@ -232,40 +232,38 @@ sub deployments_do_in_children {
 				}
 				$handle->push_read(json => $json_reader);
 			};
-			my $stdout_pipe = AnyEvent::Subprocess::Job::Delegate::Handle->new(
-				name => 'stdout', direction => 'r', replace => \*STDOUT);
-			my $stderr_pipe = AnyEvent::Subprocess::Job::Delegate::Handle->new(
-				name => 'stderr', direction => 'r', replace => \*STDERR);
-			my $data_pipe = AnyEvent::Subprocess::Job::Delegate::Handle->new(
-				name => 'data_pipe', direction => 'r', pass_to_child => 1);
-			$stdout_pipe->handle()->on_read(get_decorator(\*STDOUT, $pref));
-			$stderr_pipe->handle()->on_read(get_decorator(\*STDERR, $pref));
-			$data_pipe->handle()->push_read(json => $json_reader);
 
 			# Run the child function
-			my $job = AnyEvent::Subprocess->new(
-				delegates     => [$stdout_pipe, $stderr_pipe, $data_pipe],
+			my $job = AnyEvent::Process->new(
+				fdtable => [
+					\*STDIN     => ['open', '<', '/dev/null'],
+					\*STDOUT    => ['pipe', '>', handle => [on_read => get_decorator(\*STDOUT, $pref), on_eof => sub {}]],
+					\*STDERR    => ['pipe', '>', handle => [on_read => get_decorator(\*STDERR, $pref), on_eof => sub {}]],
+					\*DATA_PIPE => ['pipe', '>', handle => [push_read => [json => $json_reader]]],
+				],
 				on_completion => sub { 
-					my $status = shift;
+					my ($pid, $status) = @_;
 					undef $check_timer;
 					undef $kill_timer;
 
-					$status = $status->exit_status();
 					$rtn{$deployment} = $status;
 					$self->log("$func_name returned $status");
 
 					$jobs++;
+					$child{$deployment}->close();
 					delete $child{$deployment};
 					$wait_for_child->send($status);
 				},
-				code          => sub {
-					my $args = shift;
+				code => sub {
 					eval {
-						$deployment->{'TESTD_data_pipe'} = $args->{data_pipe};
-						$deployment->{'TESTD_data_pipe'}->autoflush(1);
-						$| = 1;
+						select DATA_PIPE; $| = 1;
+						select STDERR;    $| = 1;
+						select STDOUT;    $| = 1;
+						$deployment->{'TESTD_data_pipe'} = \*DATA_PIPE;
+
 						$0 = 'TD ' . $func_name;
 						$self->log("Running $func_name ");
+
 						no strict 'refs';
 						my $rtn = $deployment->$func(@argv);
 						$self->err('CRITICAL', "$func did not return a number") unless $rtn =~ /^\d+$/;

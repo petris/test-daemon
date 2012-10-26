@@ -3,22 +3,21 @@ use ExtUtils::MakeMaker;
 
 WriteMakefile(
 	NAME              => 'Test::Daemon',
-	VERSION_FROM      => 'lib/Test/Daemon/Runner.pm',
+	VERSION_FROM      => 'lib/Test/Daemon.pm',
 	#EXE_FILES         => ['bin/TestDaemon.pl', 'bin/tdps'],
 	BUILD_REQUIRES    => {
-		'Test::MockObject' => 1.20110612,
+		'Test::MockObject' => 1.09,
+		'Test::Resub'      => 2.01,
+		'Test::More'       => 0.98,
+		'IPC::SysV'        => 2.03,
 	},
 	PREREQ_PM         => {
-		'Test::Daemon::Object' => 0.01,
-		'AnyEvent::Subprocess' => 1.102912,
-		#'Getopt::Long' => 2.10,
-		#'Pod::Usage' => 1.36,
-		'File::Temp' => 0.20,
-		'File::Copy' => 2.01,
-		'File::Path' => 2.01,
-		'Coro' => 5.372,
+		'AnyEvent::Process' => 0.01,
+		'AnyEvent'          => 7.02,
+		'Coro'              => 6.10,
+		'JSON'              => 2.03,
 	},
 	($] >= 5.005 ?     ## Add these new keywords supported since 5.005
-		(ABSTRACT_FROM  => 'lib/Test/Daemon/Runner.pm',
+		(ABSTRACT_FROM  => 'lib/Test/Daemon.pm',
 			AUTHOR         => 'Petr Malat <oss@malat.biz>') : ()),
 );

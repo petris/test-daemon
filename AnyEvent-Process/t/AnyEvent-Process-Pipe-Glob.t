@@ -2,10 +2,10 @@ use strict;
 
 use Test::More tests => 5;
 
-use_ok('AnyEvent::Child');
+use_ok('AnyEvent::Process');
 
-my $proc = new AnyEvent::Child(
-	fdtable => [
+my $proc = new AnyEvent::Process(
+	fh_table => [
 		\*STDIN  => ['pipe', '<', \*OUTPIPE],
 		\*STDOUT => ['pipe', '>', \*INPIPE]
 	],

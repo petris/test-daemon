@@ -185,19 +185,6 @@ sub deployments_do_in_current {
 	}
 }
 
-sub get_decorator {
-	my $handle = shift || die;
-	my $prefix = shift || die;
-
-	return sub {
-		my $hd = shift;
-
-		while ($hd->rbuf() =~ s/^(.*\n)//) {
-			print $handle $prefix, ": ", $1;
-		}
-	};
-}
-
 sub deployments_do_in_children {
 	my $self = shift;
 	my $resources = shift;
@@ -235,10 +222,10 @@ sub deployments_do_in_children {
 
 			# Run the child function
 			my $job = AnyEvent::Process->new(
-				fdtable => [
+				fh_table => [
 					\*STDIN     => ['open', '<', '/dev/null'],
-					\*STDOUT    => ['pipe', '>', handle => [on_read => get_decorator(\*STDOUT, $pref), on_eof => sub {}]],
-					\*STDERR    => ['pipe', '>', handle => [on_read => get_decorator(\*STDERR, $pref), on_eof => sub {}]],
+					\*STDOUT    => ['decorate', '>', $pref . ': ', \*STDOUT],
+					\*STDERR    => ['decorate', '>', $pref . ': ', \*STDERR],
 					\*DATA_PIPE => ['pipe', '>', handle => [push_read => [json => $json_reader]]],
 				],
 				on_completion => sub { 

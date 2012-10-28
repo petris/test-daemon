@@ -64,6 +64,7 @@ sub run {
 	my %proc_args;
 	my @fh_table;
 	my @handles;
+	my ($last_callback, $last_callback_set_args);
 
 	# Process arguments
 	foreach my $arg (@proc_args) {
@@ -75,16 +76,52 @@ sub run {
 		croak 'Unknown arguments: ' . join ', ', keys %args;
 	}
 
+	if (defined $proc_args{on_completion}) {
+		my $counter = 0;
+		my @last_callback_args;
+
+		$last_callback = sub {
+			my $func = shift // sub {};
+
+			$counter++;
+			return sub {
+				my ($err, $rtn);
+
+				eval {
+					$rtn = $func->(@_);
+				}; $err = $@;
+
+				if (--$counter == 0) {
+					eval {
+						$proc_args{on_completion}->(@last_callback_args);
+					}; $err = $err || $@;
+				}
+
+				if ($err) {
+					croak $err;
+				}
+
+				return $rtn;
+			}
+		};
+		$last_callback_set_args = sub {
+			@last_callback_args = @_;
+		}
+	} else {
+		$last_callback = sub { $_->[0] // sub {} };
+	}
+
 	# Handle fh_table
 	for (my $i = 0; $i < $#{$proc_args{fh_table}}; $i += 2) {
 		my ($handle, $args) = @{$proc_args{fh_table}}[$i, $i + 1];
+
 		unless (ref $handle eq 'GLOB' or $handle =~ /^\d{1,4}$/) {
 			croak "Every second element in 'fh_table' must be " . 
 					"GLOB reference or file descriptor number";
-		}
-		if ($args->[0] eq 'pipe') {
+		} elsif ($args->[0] eq 'pipe') {
 			my ($my_fh, $child_fh);
 
+			# Create pipe or socketpair
 			if ($args->[1] eq '>') {
 				($my_fh, $child_fh) = portable_pipe;
 			} elsif ($args->[1] eq '<') {
@@ -96,7 +133,7 @@ sub run {
 			}
 
 			unless (defined $my_fh && defined $child_fh) {
-				croak "Creating pipe failed";
+				croak "Creating pipe failed: $!";
 			}
 
 			push @fh_table, [$handle, $child_fh];
@@ -106,18 +143,46 @@ sub run {
 			} elsif ($args->[2] eq 'handle') {
 				push @handles, [$my_fh, $args->[3]];
 			}
-
-			next;
-		}
-		if ($args->[0] eq 'open') {
+		} elsif ($args->[0] eq 'open') {
 			open my $fh, $args->[1], $args->[2];
 			unless (defined $fh) {
-				croak "Opening file failed";
+				croak "Opening file failed: $!";
 			}
 			push @fh_table, [$handle, $fh];
-			next;
+		} elsif ($args->[0] eq 'decorate') {
+			my $out = $args->[3];
+			unless (defined $out or ref $out eq 'GLOB') {
+				croak "Third argument of decorate must be a glob reference";
+			}
+
+			my ($my_fh, $child_fh) = portable_pipe;
+			unless (defined $my_fh && defined $child_fh) {
+				croak "Creating pipe failed: $!";
+			}
+
+			my $on_read;
+			my $decorator = $args->[2];
+			if (defined $decorator and ref $decorator eq '') {
+				$on_read = sub {
+					while ($_[0]->rbuf() =~ s/^(.*\n)//) {
+						print $out $decorator, $1;
+					}
+				};
+			} elsif (defined $decorator and ref $decorator eq 'CODE') {
+				$on_read = sub {
+					while ($_[0]->rbuf() =~ s/^(.*\n)//) {
+						print $out $decorator->($1);
+					}
+				};
+			} else {
+				croak "Second argument of decorate must be a string or code reference";
+			}
+
+			push @fh_table, [$handle, $child_fh];
+			push @handles,  [$my_fh, [on_read => $on_read, on_eof => $last_callback->()]];
+		} else {
+			croak "Unknown redirect type '$args->[0]'";
 		}
-		croak "Unknown redirect type '$args->[0]'";
 	}
 
 	# Start child
@@ -141,10 +206,13 @@ sub run {
 		my $rtn = $proc_args{code}->(@{$proc_args{args} // []});
 		exit ($rtn eq int($rtn) ? $rtn : 1);
 	} else {
+		AE::log info => "Forked new process $pid.";
+
 		$job = new AnyEvent::Process::Job($pid);
 
 		# Close FDs
 		foreach my $dup (@fh_table) {
+			AE::log trace => "Closing $dup->[1].";
 			close $dup->[1];
 		}
 
@@ -152,12 +220,17 @@ sub run {
 		foreach my $handle (@handles) {
 			my (@hdl_args, @hdl_calls);
 			for (my $i = 0; $i < $#{$handle->[1]}; $i += 2) {
-				if (AnyEvent::Handle->can($handle->[1][$i] and 'ARRAY' eq ref $handle->[1][$i+1])) {
-					push @hdl_calls, [$handle->[1][$i], $handle->[1][$i+1]];
+				if (AnyEvent::Handle->can($handle->[1][$i]) and 'ARRAY' eq ref $handle->[1][$i+1]) {
+					if ($handle->[1][$i] eq 'on_eof') {
+						push @hdl_calls, [$handle->[1][$i], $last_callback->($handle->[1][$i+1])];
+					} else {
+						push @hdl_calls, [$handle->[1][$i], $handle->[1][$i+1]];
+					}
 				} else {
 					push @hdl_args, $handle->[1][$i] => $handle->[1][$i+1];
 				}
 			}
+			AE::log trace => "Creating handle " . join ' ', @hdl_args;
 			my $hdl = AnyEvent::Handle->new(fh => $handle->[0], @hdl_args);
 			foreach my $call (@hdl_calls) {
 				no strict 'refs';
@@ -169,7 +242,7 @@ sub run {
 
 		# Create callbacks
 		if (defined $proc_args{on_completion}) {
-			$job->add_cb(AE::child $pid, $proc_args{on_completion});
+			$job->add_cb(AE::child $pid, $last_callback->($last_callback_set_args));
 		}
 		$self->{job} = $job;
 	}

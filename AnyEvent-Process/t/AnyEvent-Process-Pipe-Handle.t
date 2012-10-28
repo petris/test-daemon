@@ -3,7 +3,7 @@ use strict;
 use Test::More tests => 5;
 use AnyEvent;
 
-use_ok('AnyEvent::Child');
+use_ok('AnyEvent::Process');
 
 my @math = ("3+5", "4+12-7", "34*3");
 my $proc;
@@ -24,11 +24,11 @@ sub reader {
 	}
 }
 
-$proc = new AnyEvent::Child(
+$proc = new AnyEvent::Process(
 	on_completion => sub { $cv->send('DONE') },
-	fdtable => [
+	fh_table => [
 		\*STDIN  => ['pipe', '<', handle => [push_write => [join "\n", @math, '']]],
-		\*STDOUT => ['pipe', '>', handle => [push_read => [line => \&reader]]]
+		\*STDOUT => ['pipe', '>', handle => [push_read  => [line => \&reader]]]
 	],
 	code => sub {
 		$| = 1;

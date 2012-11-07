@@ -27,7 +27,7 @@ $fd2->mock('prepare_resources');
 $fd2->mock('deploy');
 $fd2->mock('collect_info', sub {return third=>'Hi!'});
 $fd2->mock('post_run');
-$fd1->mock('out_prefix', sub {return 'Second::Fake::Deployment'});
+$fd2->mock('out_prefix', sub {return 'Second::Fake::Deployment'});
 
 my $deployment = Test::Daemon::Environment->new(
 	name => 'My Environment',

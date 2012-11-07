@@ -9,12 +9,12 @@ WriteMakefile(
 		'Test::MockObject' => 1.09,
 		'Test::Resub'      => 2.01,
 		'Test::More'       => 0.98,
-		'IPC::SysV'        => 2.03,
+		'IPC::SysV'        => 2.01,
 	},
 	PREREQ_PM         => {
 		'AnyEvent::Process' => 0.01,
 		'AnyEvent'          => 7.02,
-		'Coro'              => 6.10,
+		'Coro'              => 6.08,
 		'JSON'              => 2.03,
 	},
 	($] >= 5.005 ?     ## Add these new keywords supported since 5.005

@@ -21,6 +21,7 @@ use_ok('Test::Daemon::TestSet');
 		local $File::Find::fullname = '/etc/passwd';
 		for my $file (shuffle @MATCH_01, @MATCH_foo, @OTHER) {
 			local $File::Find::name = $ROOT . '/' . $file;
+			lstat __FILE__;
 			$args->{wanted}->();
 		}
 	};

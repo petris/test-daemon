@@ -3,7 +3,7 @@ use strict;
 
 sub new {
 	my ($ref, $pid) = @_;
-	my $self = bless {pid => $pid, cbs => [], handles => []}, $ref;
+	my $self = bless {pid => $pid, cbs => [], handles => [], timers => []}, $ref;
 
 	return $self;
 }
@@ -24,11 +24,21 @@ sub add_handle {
 	push @{$self->{handles}}, $handle;
 }
 
+sub add_timer {
+	my ($self, $timer) = @_;
+	push @{$self->{timers}}, $timer;
+}
+
+sub cancel_timers {
+	my $self = shift;
+	undef $_ foreach @{$self->{timers}};
+	undef $self->{timers};
+}
+
 sub close {
 	my $self = shift;
-	foreach (@{$self->{handles}}) {
-		undef $_;
-	}
+	undef $_ foreach @{$self->{handles}};
+	undef $self->{handles};
 }
 
 package AnyEvent::Process;
@@ -39,7 +49,7 @@ use AnyEvent::Util;
 use AnyEvent;
 use Carp;
 
-our @proc_args = qw(fh_table code on_completion args);
+our @proc_args = qw(fh_table code on_completion args watchdog_interval on_watchdog kill_interval on_kill);
 our $VERSION = '0.01';
 
 sub new {
@@ -108,7 +118,7 @@ sub run {
 			@last_callback_args = @_;
 		}
 	} else {
-		$last_callback = sub { $_->[0] // sub {} };
+		$last_callback = sub { $_[0] // sub {} };
 	}
 
 	# Handle fh_table
@@ -222,7 +232,7 @@ sub run {
 			for (my $i = 0; $i < $#{$handle->[1]}; $i += 2) {
 				if (AnyEvent::Handle->can($handle->[1][$i]) and 'ARRAY' eq ref $handle->[1][$i+1]) {
 					if ($handle->[1][$i] eq 'on_eof') {
-						push @hdl_calls, [$handle->[1][$i], $last_callback->($handle->[1][$i+1])];
+						push @hdl_calls, [$handle->[1][$i], $last_callback->($handle->[1][$i+1][0])];
 					} else {
 						push @hdl_calls, [$handle->[1][$i], $handle->[1][$i+1]];
 					}
@@ -235,16 +245,56 @@ sub run {
 			foreach my $call (@hdl_calls) {
 				no strict 'refs';
 				my $method = $call->[0];
+				AE::log trace => "Calling handle method $method(" . join(', ', @{$call->[1]}) . ')';
 				$hdl->$method(@{$call->[1]});
 			}
 			$job->add_handle($hdl);
 		}
 
 		# Create callbacks
+		my $completion_cb;
 		if (defined $proc_args{on_completion}) {
-			$job->add_cb(AE::child $pid, $last_callback->($last_callback_set_args));
+			$completion_cb = sub {
+				$job->cancel_timers();
+				AE::log info => "Process $job->{pid} finnished with code $_[1].";
+				$last_callback_set_args->($job, $_[1]);
+			};
+		} else {
+			$completion_cb = sub {
+				$job->cancel_timers();
+				AE::log info => "Process $job->{pid} finnished with code $_[1]";
+			};
 		}
+		$job->add_cb(AE::child $pid, $last_callback->($completion_cb));
+
 		$self->{job} = $job;
+
+		# Create watchdog and kill timers
+		my $on_kill = $proc_args{on_kill} // sub { $_[0]->kill(9) };
+		if (defined $proc_args{kill_interval}) {
+			my $kill_cb = sub { 
+				$job->cancel_timers();
+				AE::log warn => "Process $job->{pid} is running too long, killing it.";
+				$on_kill->($job);
+			};
+			$job->add_timer(AE::timer $proc_args{kill_interval}, 0, $kill_cb);
+		}
+		if (defined $proc_args{watchdog_interval} or defined $proc_args{on_watchdog}) {
+			unless (defined $proc_args{watchdog_interval} &&
+				defined $proc_args{on_watchdog}) {
+				croak "Both or none of watchdog_interval and on_watchdog must be defined";
+			}
+
+			my $watchdog_cb = sub {
+				AE::log info => "Executing watchdog for process $job->{pid}.";
+				unless ($proc_args{on_watchdog}->($job)) {
+					$job->cancel_timers();
+					AE::log warn => "Watchdog for process $job->{pid} failed, killing it.";
+					$on_kill->($job);
+				}
+			};
+			$job->add_timer(AE::timer $proc_args{watchdog_interval}, $proc_args{watchdog_interval}, $watchdog_cb);
+		}
 	}
 
 	return $job;

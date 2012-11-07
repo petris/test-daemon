@@ -205,7 +205,6 @@ sub deployments_do_in_children {
 
 			$self->log('Processing ' . ref $deployment);
 			my $func_name =  ref($deployment) . '::' . $func;
-			my ($check_timer, $kill_timer);
 
 			# Create STDOUT, STDERR and DATA pipe
 			my $pref = $deployment->out_prefix();
@@ -214,6 +213,7 @@ sub deployments_do_in_children {
 			}
 			my $json_reader; $json_reader = sub {
 				my ($handle, $data) = @_;
+				AE::log trace => "GET $handle, $data";
 				while (my ($k, $v) = each %$data) {
 					$deployment->{$k} = $v;
 				}
@@ -221,17 +221,15 @@ sub deployments_do_in_children {
 			};
 
 			# Run the child function
-			my $job = AnyEvent::Process->new(
+			my %job_args = (
 				fh_table => [
 					\*STDIN     => ['open', '<', '/dev/null'],
 					\*STDOUT    => ['decorate', '>', $pref . ': ', \*STDOUT],
 					\*STDERR    => ['decorate', '>', $pref . ': ', \*STDERR],
-					\*DATA_PIPE => ['pipe', '>', handle => [push_read => [json => $json_reader]]],
+					\*DATA_PIPE => ['pipe', '>', handle => [push_read => [json => $json_reader], on_error => sub {}]],
 				],
 				on_completion => sub { 
 					my ($pid, $status) = @_;
-					undef $check_timer;
-					undef $kill_timer;
 
 					$rtn{$deployment} = $status;
 					$self->log("$func_name returned $status");
@@ -258,35 +256,22 @@ sub deployments_do_in_children {
 					};
 					$self->log("Exceptional exit: $@");
 					exit $CRASHED;
-				}
+				},
+				kill_interval => $self->deployment_get_value($deployment, $func . '_step_timeout') ||
+						 $self->deployment_get_value($deployment, 'step_timeout', $func),
 			);
+			if ($deployment->can('running')) {
+				$job_args{watchdog_interval} =  $self->deployment_get_value($deployment, $func . '_step_check_timeout') ||
+						                $self->deployment_get_value($deployment, 'step_check_timeout', $func);
+				$job_args{on_watchdog} = sub { 
+					$self->log("Checking if $func_name is running");
+					return $deployment->running($func);
+				};
+			}
+
+			my $job = AnyEvent::Process->new(%job_args);
 			$child{$deployment} = $job;
 			my $runner = $job->run();
-
-			# Create timers
-			my $step_timeout = $self->deployment_get_value($deployment, $func . '_step_timeout') ||
-				           $self->deployment_get_value($deployment, 'step_timeout', $func);
-			$self->log("Kill timeout of $func_name is $step_timeout");
-			$kill_timer = AE::timer $step_timeout, 0, sub {
-				undef $check_timer; 
-				$self->log("$func_name is running too long, killing");
-				$runner->kill(9);
-			};
-			if ($deployment->can('running')) {
-				my $step_check_timeout = $self->deployment_get_value($deployment, $func . '_step_check_timeout') ||
-							 $self->deployment_get_value($deployment, 'step_check_timeout', $func);
-				$self->log("Running check period of $func_name is $step_check_timeout");
-				$check_timer = AE::timer $step_check_timeout, $step_check_timeout, sub {
-					$self->log("Checking if $func_name is running");
-					if ($deployment->running($func, @_)) {
-						$self->log("$func_name is running");
-					} else {
-						$self->log("$func_name is not running - killing");
-						undef $kill_timer;
-						$runner->kill(9);
-					}
-				}
-			}
 		} else { # Not enought job slots
 			my $status = $wait_for_child->recv();
 			if ($status == 0) {

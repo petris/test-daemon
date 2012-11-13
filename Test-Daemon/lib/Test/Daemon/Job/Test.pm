@@ -30,7 +30,7 @@ sub run ($$$) {
 	$self->log("Running TC $self->{tc}{name} with resources: " . join ' ', sort map $_->{name}, values %{$self->{resources}});
 
 	# prerun
-	return if $env->do_steps('prerun', $self->{resources});
+	return if $env->do_steps('prerun', $self->{resources}, $self->{tc});
 
 	# run
 	$self->{started}   = time;

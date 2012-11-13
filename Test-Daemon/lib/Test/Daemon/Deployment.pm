@@ -20,12 +20,23 @@ sub set_in_master {
 	my %data = @_;
 
 	if (defined $self->{'TESTD_data_pipe'}) {
-		$self->log('Setting in master ' . to_json(\%data));
-		print {$self->{'TESTD_data_pipe'}} to_json(\%data);
+		print {$self->{'TESTD_data_pipe'}} to_json({set => \%data});
 	} else {
 		while (my ($key, $value) = each %data) {
 			$self->{$key} = $value;
 		}
+	}
+}
+
+sub call_in_master {
+	my $self = shift;
+	my $method = shift;
+
+	if (defined $self->{'TESTD_data_pipe'}) {
+		print {$self->{'TESTD_data_pipe'}} to_json({call => [[$method, \@_]]});
+	} else {
+		no strict 'refs';
+		$self->$method(@_);
 	}
 }
 

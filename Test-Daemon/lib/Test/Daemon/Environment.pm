@@ -214,8 +214,17 @@ sub deployments_do_in_children {
 			my $json_reader; $json_reader = sub {
 				my ($handle, $data) = @_;
 				AE::log trace => "GET $handle, $data";
-				while (my ($k, $v) = each %$data) {
-					$deployment->{$k} = $v;
+				if (defined $data->{set}) {
+					while (my ($k, $v) = each %{$data->{set}}) {
+						$deployment->{$k} = $v;
+					}
+				}
+				if (defined $data->{call}) {
+					foreach my $call (@{$data->{call}}) {
+						my $method = $call->[0];
+						no strict 'refs';
+						$deployment->$method(@{$call->[1]});
+					}
 				}
 				$handle->push_read(json => $json_reader);
 			};

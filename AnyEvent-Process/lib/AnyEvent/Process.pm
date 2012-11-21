@@ -330,6 +330,129 @@ This module starts an process
 
 =head2 new
 
+Creates new AnyEvent::Process instance. 
+
+Arguments:
+
+=over 4
+
+=item fh_table (optional)
+
+Can be used to define open files in a created process. Syntax of this option
+is the following:
+
+  [
+    HANDLE => [TYPE, DIRECTION, ARGS...],
+    HANDLE => [TYPE, DIRECTION, ARGS...],
+    ...
+  ]
+
+where
+
+=over 4
+
+=item HANDLE
+
+is a handle reference or filedescriptor number, which will be opened in the new
+process.
+
+=item DIRECTION
+
+can be '>' if the HANDLE in new process shall be opened for writting, '<' if it
+shall be opened for reading or '+<' if it shall be opened in read-write mode.
+
+=item TYPE
+
+Following types are supported:
+
+=over 4
+
+=item pipe
+
+Opens unidirectional pipe or bidirectional socket (depends on DIRECTION) between
+current and new process. ARGS can be a glob reference, then the second and of
+pipe or socket pair is connected to it, or handle => [handle_args...], where
+handle_args are argument passed to AnyEvent::Handle constructor, which will
+be connected to the second end of pipe or socket. In the case handle_args is in
+the form of method => [method_args...] and method is AnyEvent::Handle method,
+then this method is called with method_args, after Handle is instantied.
+
+Example:
+  \*STDOUT => ['pipe', '>', handle => [push_read  => [line => \&reader]]]
+
+=item open
+
+Opens the specified HANDLE using open with DIRECTION and ARGS as its arguments.
+
+Example:
+  0 => ['open', '<', '/dev/null']
+
+=item decorate
+
+Decorate every line written to the HANDLE by child. DIRECTION must be '>'.
+ARGS are in the form DECORATOR, OUTPUT. OUTPUT is a glob reference and specifies
+a file handle, into which decorated lines are written. Decorator is a string or 
+a code reference. If the decorator is a string, it is prepended to every line 
+writen by started process. If DECORATOR is a code reference, it is called for 
+each line writen to HANDLE with that line as argument and its return value is 
+written to OUTPUT.
+
+Example:
+  \*STDERR => ['decorate', '>', 'Child STDERR: ', \*STDERR]
+
+=back
+
+=back
+
+=item code (optional, but must be specified either in new or run) 
+
+A code reference, which is executed in the newly started process.
+
+=item args (optional)
+
+Arguments past to a code reference specified as code argument when it is called.
+
+=item on_completion (optional)
+
+Callback, which is executed when the process finnishes. It receives 
+AnyEvent::Process::Job instance as a first argument and exit code as the second
+argument.
+
+It is called after all AnyEvent::Handle callback specified in fh_table.
+
+=item watchdog_interval (in seconds, optional)
+
+How often a watchdog shall be called. If undefined or set to 0, watchdog
+functionality is disabled. 
+
+=item on_watchdog (optional)
+
+Watchdog callback, receives AnyEvent::Process::Job instance as an argument.
+If it returns false value, watched process is killed (see on_kill). 
+
+=item kill_interval (in seconds, optional)
+
+Maximum time the process can run. After this time expires, the process is 
+killed.
+
+=item on_kill (optional, sends SIGKILL by default)
+
+Called, when the process shall be killed. Receives AnyEvent::Process::Job 
+instance as an argument.
+
+=back
+
+=head2 run
+
+Run a process. Any argument specified to constructor can be overriden here.
+Returns AnyEvent::Process::Job, which represents the new process, or undef on
+error.
+
+=head2 kill
+
+Run kill method of latest created AnyEvent::Process::Job. Sends signal specified
+as argument to the process.
+
 =head1 SEE ALSO
 
 L<AnyEvent> - Event framework for PERL.

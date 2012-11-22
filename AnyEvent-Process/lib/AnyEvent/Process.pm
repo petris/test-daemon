@@ -14,6 +14,10 @@ sub kill {
 	return kill $signal, $self->{pid};
 }
 
+sub pid {
+	return $_[0]->{pid};
+}
+
 sub add_cb {
 	my ($self, $cb) = @_;
 	push @{$self->{cbs}}, $cb;
@@ -256,13 +260,13 @@ sub run {
 		if (defined $proc_args{on_completion}) {
 			$completion_cb = sub {
 				$job->cancel_timers();
-				AE::log info => "Process $job->{pid} finnished with code $_[1].";
+				AE::log info => "Process $job->{pid} finished with code $_[1].";
 				$last_callback_set_args->($job, $_[1]);
 			};
 		} else {
 			$completion_cb = sub {
 				$job->cancel_timers();
-				AE::log info => "Process $job->{pid} finnished with code $_[1]";
+				AE::log info => "Process $job->{pid} finished with code $_[1]";
 			};
 		}
 		$job->add_cb(AE::child $pid, $last_callback->($completion_cb));
@@ -307,6 +311,13 @@ sub kill {
 	return $self->{job}->kill($signal);
 }
 
+sub pid {
+	my $self = shift;
+
+	croak 'No process was started' unless defined $self->{job};
+	return $self->{job}->pid();
+}
+
 sub close {
 	my $self = shift;
 
@@ -320,11 +331,48 @@ __END__
 
 =head1 NAME
 
-AnyEvent::Process - Start process and watch for events 
+AnyEvent::Process - Start a process and watch for events 
+
+=head1 SYNOPSIS
+
+  use AnyEvent::Process;
+
+  my $proc = new AnyEvent::Process(
+    fh_table => [
+      # Connect OUTPIPE file handle to STDIN of a new process
+      \*STDIN  => ['pipe', '<', \*OUTPIPE],
+      # Connect INPIPE file handle to STDOUT of a new process
+      \*STDOUT => ['pipe', '>', \*INPIPE],
+      # Print everything written to STDERR by a new process to STDERR of current
+      # process, but prefix every line with 'bc ERROR: '
+      \*STDERR => ['decorate', '>', 'bc ERROR: ', \*STDERR]
+    ],
+    # We don't want to wait longer than 10 seconds, so kill bc after that time
+    kill_interval => 10,
+    # Execute bc in a new process
+    code => sub {
+      exec 'bc', '-q';
+    });
+  
+  # Start bc in a new process
+  $proc->run();
+  
+  # Send data to bc standart input
+  print OUTPIPE "123^456\n";
+  close OUTPIPE;
+  
+  # Read from bc standart output
+  my $result = <INPIPE>;
+  print "BC computed $result";
 
 =head1 DESCRIPTION
 
-This module starts an process
+This module starts a new process. It allows connecting file descriptor in the 
+new process to files or handles (both to perl handles or to 
+L<AnyEvent:Handle|AnyEvent:Handle>).
+
+It is possible to monitor the process execution using watchdog callback or kill
+the process after defined time.
 
 =head1 METHODS
 
@@ -358,8 +406,9 @@ process.
 
 =item DIRECTION
 
-can be '>' if the HANDLE in new process shall be opened for writting, '<' if it
-shall be opened for reading or '+<' if it shall be opened in read-write mode.
+can be C<E<gt>> if the HANDLE in new process shall be opened for writting, 
+C<E<lt>> if it shall be opened for reading or C<+E<lt>> if it shall be opened
+in read-write mode.
 
 =item TYPE
 
@@ -371,11 +420,12 @@ Following types are supported:
 
 Opens unidirectional pipe or bidirectional socket (depends on DIRECTION) between
 current and new process. ARGS can be a glob reference, then the second and of
-pipe or socket pair is connected to it, or handle => [handle_args...], where
-handle_args are argument passed to AnyEvent::Handle constructor, which will
-be connected to the second end of pipe or socket. In the case handle_args is in
-the form of method => [method_args...] and method is AnyEvent::Handle method,
-then this method is called with method_args, after Handle is instantied.
+pipe or socket pair is connected to it, or C<handle =E<gt> [handle_args...]>, 
+where handle_args are argument passed to L<AnyEvent::Handle|AnyEvent::Handle>
+constructor, which will be connected to the second end of pipe or socket. In the
+case handle_args is in the form of C<method =E<gt> [method_args...]> and method 
+is AnyEvent::Handle method, then this method is called with method_args, after 
+handle is instantiated.
 
 Example:
   \*STDOUT => ['pipe', '>', handle => [push_read  => [line => \&reader]]]
@@ -389,13 +439,13 @@ Example:
 
 =item decorate
 
-Decorate every line written to the HANDLE by child. DIRECTION must be '>'.
-ARGS are in the form DECORATOR, OUTPUT. OUTPUT is a glob reference and specifies
-a file handle, into which decorated lines are written. Decorator is a string or 
-a code reference. If the decorator is a string, it is prepended to every line 
-writen by started process. If DECORATOR is a code reference, it is called for 
-each line writen to HANDLE with that line as argument and its return value is 
-written to OUTPUT.
+Decorate every line written to the HANDLE by child. DIRECTION must be C<E<gt>>.
+ARGS are in the form C<DECORATOR, OUTPUT>. OUTPUT is a glob reference and 
+specifies a file handle, into which decorated lines are written. Decorator is a
+string or a code reference. If the decorator is a string, it is prepended to 
+every line written by started process. If DECORATOR is a code reference, it is 
+called for each line written to HANDLE with that line as argument and its return 
+value is written to OUTPUT.
 
 Example:
   \*STDERR => ['decorate', '>', 'Child STDERR: ', \*STDERR]
@@ -414,9 +464,9 @@ Arguments past to a code reference specified as code argument when it is called.
 
 =item on_completion (optional)
 
-Callback, which is executed when the process finnishes. It receives 
-AnyEvent::Process::Job instance as a first argument and exit code as the second
-argument.
+Callback, which is executed when the process finishes. It receives 
+AnyEvent::Process::Job instance as the first argument and exit code as the 
+second argument.
 
 It is called after all AnyEvent::Handle callback specified in fh_table.
 
@@ -444,25 +494,56 @@ instance as an argument.
 
 =head2 run
 
-Run a process. Any argument specified to constructor can be overriden here.
+Run a process. Any argument specified to constructor can be overridden here.
 Returns AnyEvent::Process::Job, which represents the new process, or undef on
 error.
 
+=over 4
+
+=item Returned AnyEvent::Process::Job instance has following methods:
+
+=over 4
+
+=item pid
+
+Returns PID of the process.
+
+=item kill
+
+Send signal specified as argument to the process.
+
+=item close
+
+Close all pipes and socketpairs between this process and child.
+
+=back
+
+=back
+
 =head2 kill
 
-Run kill method of latest created AnyEvent::Process::Job. Sends signal specified
-as argument to the process.
+Run kill method of latest created AnyEvent::Process::Job - sends signal 
+specified as argument to the process.
+
+=head2 pid
+
+Run pid method of latest created AnyEvent::Process::Job - returns PID of the
+process.
+
+=head2 close
+
+Run close method of latest created AnyEvent::Process::Job.
 
 =head1 SEE ALSO
 
 L<AnyEvent> - Event framework for PERL.
 
-L<AnyEvent::Subprocess> - Similiar module, but with more dependencies and little
+L<AnyEvent::Subprocess> - Similar module, but with more dependencies and little
 more complicated usage.
 
 =head1 AUTHOR
 
-Petr Malat <oss@malat.biz>
+Petr Malat E<lt>oss@malat.bizE<gt> L<http://malat.biz/>
 
 =head1 COPYRIGHT
 

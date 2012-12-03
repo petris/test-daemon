@@ -4,7 +4,7 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
 	NAME              => 'Test::Daemon',
 	VERSION_FROM      => 'lib/Test/Daemon.pm',
-	#EXE_FILES         => ['bin/TestDaemon.pl', 'bin/tdps'],
+	EXE_FILES         => ['bin/td', 'bin/tdc'],
 	BUILD_REQUIRES    => {
 		'Test::MockObject' => 1.09,
 		'Test::Resub'      => 2.01,

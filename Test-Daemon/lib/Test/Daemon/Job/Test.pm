@@ -16,6 +16,7 @@ sub init {
 	$self->{completed} = 0;
 	$self->{tc}        = $args{tc};
 	$self->{loggers}   = $args{loggers};
+	$self->{runner}    = $args{runner};
 }
 
 sub pre_run {
@@ -36,6 +37,14 @@ sub run ($$$) {
 	$self->{started}   = time;
 	$self->{result}    = $env->deployments_do($self->{resources}, 'run', 1, $self->{tc});
 	$self->{completed} = time;
+
+	if (defined $self->{runner}) {
+		if ($self->{result}) {
+			$self->{runner}{fail}++;
+		} else {
+			$self->{runner}{pass}++;
+		}
+	}
 
 	# precollect
 	return if $env->do_steps('precollect', $self->{resources}, $self->{tc}, $self->{result});

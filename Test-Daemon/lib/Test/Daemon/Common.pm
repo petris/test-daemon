@@ -7,7 +7,7 @@ use Carp;
 use Exporter 'import';
 
 our $VERSION = 0.01;
-our @EXPORT_OK = qw(load_sub load_sub_unless_sub get_file);
+our @EXPORT_OK = qw(load_sub load_sub_unless_sub get_file expand_vars);
 
 sub load_sub($) {
 	my $sub = shift;
@@ -42,6 +42,24 @@ sub get_file($) {
 	}
 
 	return $new_file;
+}
+
+sub expand_vars($) {
+	my $line = shift;
+	my $expanded = '';
+
+	while ($line =~ /^(.*?)\$\{(\w*)\}(.*)$/o) {
+		$expanded .= $1;
+		if ($2 eq '') {
+			$expanded .= '$';
+		} elsif (defined $ENV{$2}) {
+			$expanded .= $ENV{$2};
+		}
+		$line = $3;
+	}
+	$expanded .= $line;
+
+	return $expanded;
 }
 
 1;

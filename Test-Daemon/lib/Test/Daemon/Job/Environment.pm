@@ -34,6 +34,7 @@ sub run($$$) {
 		# Create environment instance
 		my $env = new Test::Daemon::Environment(
 			%{$self->{environment}},
+			runner      => $self->{runner},
 			resources   => $resources, 
 			name        => "$self->{name}/$num");
 

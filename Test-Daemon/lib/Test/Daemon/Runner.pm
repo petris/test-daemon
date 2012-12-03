@@ -7,6 +7,8 @@ use Test::Daemon::TestSet;
 use Test::Daemon::Job::Environment;
 use Test::Daemon::Job::Test;
 
+use List::Util;
+
 our @ISA = qw(Test::Daemon::Object);
 our @MANDATORY_ARGS = qw(testsets environments provided_resources);
 our $VERSION = 0.02;
@@ -15,9 +17,31 @@ sub init {
 	my $self = shift;
 	my %args = @_;
 
-	$self->{resources} = new Test::Daemon::ResourcePool(resources => $args{provided_resources});
+	if ('Test::Daemon::ResourcePool' eq ref $args{provided_resources}) {
+		$self->{resources} = $args{provided_resources};
+	} else {
+		$self->{resources} = new Test::Daemon::ResourcePool(resources => $args{provided_resources});
+	}
+	$self->{name} = $args{name};
 	$self->{environments} = $args{environments};
 	$self->{environment_testcases} = {};
+	$self->{pass} = 0;
+	$self->{fail} = 0;
+
+	foreach my $out (qw(STDOUT STDERR)) {
+		if (defined $args{$out}) {
+			open $self->{$out}, '>>', $args{$out};
+			if (defined $self->{$out}) {
+				$self->log("Opened $out: $args{$out}");
+			} else {
+				$self->log("Failed to open $args{$out} as $out");
+			}
+		}
+		unless (defined $self->{$out}) {
+			no strict 'refs';
+			$self->{$out} = \*{$out};
+		}
+	}
 
 	# Create test sets
 	$self->{testsets} = {};
@@ -27,7 +51,7 @@ sub init {
 		push @{$self->{testsets_to_run}}, $ts_name;
 	}
 
-	# Assign tests to environments
+	# Asign tests to environments
 	$self->{testsets_to_run} = $args{testsets_to_run} if defined $args{testsets_to_run};
 	foreach my $ts_name (@{$self->{testsets_to_run}}) {
 		my $ts = $self->{testsets}{$ts_name};
@@ -37,6 +61,7 @@ sub init {
 			$self->{environment_testcases}{$env} = [$ts->get_environment_testcases($env)];
 		}
 	}
+	$self->{total} = List::Util::sum(map {scalar @$_} values %{$self->{environment_testcases}});
 
 	# Create loggers
 	$self->{loggers} = [];
@@ -69,15 +94,21 @@ sub run {
 	my @jobs;
 
 	# Create job for every environment we are going to run
+	my $name = defined $self->{name} ? $self->{name} . '/' : '';
 	while (my ($env, $tests) = each %{$self->{environment_testcases}}) {
 		if (defined $self->{environments}{$env}) {
-			push @jobs, new Test::Daemon::Job::Environment(environment => $self->{environments}{$env},
-					name => $env, 
-					testjobs => [map Test::Daemon::Job::Test->new(tc => $_, loggers => $self->{loggers}), @$tests]);
+			push @jobs, new Test::Daemon::Job::Environment(
+						environment => $self->{environments}{$env},
+						name =>  $name . $env, 
+						runner => $self,
+						testjobs => [map Test::Daemon::Job::Test->new(
+									tc => $_, runner => $self, 
+									loggers => $self->{loggers}), 
+								@$tests]);
 		} else {
 			$self->err("Environment '$env' is not defined");
 		}
-	}	
+	}
 
 	# Run it
 	$self->log_testset('testset_start');

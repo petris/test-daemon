@@ -22,6 +22,7 @@ sub init {
 	# Mandatory arguments
 	$self->{name}        = $args{name};
 	$self->{resources}   = $args{resources};
+	$self->{runner}      = $args{runner};
 	$self->{deployments} = $self->create_deployments($args{deployments});
 
 	# Optional arguments
@@ -233,8 +234,8 @@ sub deployments_do_in_children {
 			my %job_args = (
 				fh_table => [
 					\*STDIN     => ['open', '<', '/dev/null'],
-					\*STDOUT    => ['decorate', '>', $pref . ': ', \*STDOUT],
-					\*STDERR    => ['decorate', '>', $pref . ': ', \*STDERR],
+					\*STDOUT    => ['decorate', '>', $pref . ': ', $self->{runner}{STDOUT} // \*STDOUT],
+					\*STDERR    => ['decorate', '>', $pref . ': ', $self->{runner}{STDERR} // \*STDERR],
 					\*DATA_PIPE => ['pipe', '>', handle => [push_read => [json => $json_reader], on_error => sub {}]],
 				],
 				on_completion => sub { 

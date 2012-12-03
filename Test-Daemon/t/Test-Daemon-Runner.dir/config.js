@@ -2,7 +2,7 @@
 "Test::Daemon::Runner": {
 	"testsets": {
 		"default": {
-			"root":     "${TESTD_CONFIG_DIR}tests/",
+			"root":     "${TEST_DAEMON_CONFIG_DIR}tests/",
 			"run":      [".*\\.pl"],
 			"get_info": "Test::Daemon::Deployment::Exec::get_info"
 		}

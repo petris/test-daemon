@@ -15,6 +15,7 @@ sub init {
 	my %args = @_;
 
 	$self->{resources} = [];
+	$self->{wait_for_job} = AE::cv;
 	
 	while (my ($name, $prop) = each %{$args{resources}}) {
 		my $res = new Test::Daemon::Resource(name => $name, provides => $prop->{provides}, variables => $prop->{variables});
@@ -112,7 +113,6 @@ sub process_jobs($$$) {
 	my ($self, $remaining, $arg) = @_;
 
 	my @jobs;
-	my $wait_for_job = AE::cv;
 	while (@$remaining) {
 		my $started = 0;
 		for (my $index = $#$remaining; $index >= 0; --$index) {
@@ -132,14 +132,14 @@ sub process_jobs($$$) {
 
 			$job->pre_run($arg);
 
-			# Run the jon one time
+			# Run the job one time
 			push @jobs, async {
 				# Do the job with resources
 				$job->run($resources, $arg);
 
 				# Free resources
 				$self->free_resources($resources);
-				$wait_for_job->send();
+				$self->{wait_for_job}->send();
 
 				# Finnish
 				$job->post_run($arg);
@@ -148,8 +148,8 @@ sub process_jobs($$$) {
 			$started++;
 		}
 		if ($started == 0 && @$remaining) {
-			my $status = $wait_for_job->recv();
-			$wait_for_job = AE::cv;
+			my $status = $self->{wait_for_job}->recv();
+			$self->{wait_for_job} = AE::cv;
 		}
 	}
 

@@ -12,7 +12,7 @@ use Data::Dumper;
 $ENV{MSG_KEY} = 12435687;
 
 # Setup variables according to helper files
-$ENV{TESTD_CONFIG} = dirname(__FILE__) . '/Test-Daemon-Runner.dir/config.js';
+$ENV{TEST_DAEMON_CONFIG} = dirname(__FILE__) . '/Test-Daemon-Runner.dir/config.js';
 my %tests_to_run;
 find(sub {$tests_to_run{$File::Find::name} = 1 if /\.pl$/ }, 
 		$ENV{PWD} . '/' . dirname(__FILE__) . '/Test-Daemon-Runner.dir/tests/');

@@ -1,0 +1,107 @@
+#!/usr/bin/env perl
+use strict;
+
+use Getopt::Std;
+use POSIX 'setsid';
+use Fcntl;
+
+our $VERSION = 0.01;
+our %argv;
+
+sub daemonize {
+	defined(my $pid = fork) or die "Can't fork: $!";
+	if ($pid == 0) {
+		chdir '/' or die "Can't chdir to /: $!";
+
+		open STDIN, '/dev/null' or die "Can't read /dev/null: $!";
+		open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $!";
+
+		die "Can't start a new session: $!" if setsid == -1;
+		open STDERR, '>&STDOUT' or die "Can't dup stdout: $!";
+
+		exit $_[0]->();
+	}
+	return $pid;
+}
+
+sub daemon {
+	close PIPE_R if defined fileno PIPE_R;
+	$^F = 2;
+
+	require AnyEvent;
+	require Test::Daemon;
+
+	my @td_args;
+	push @td_args, exit_after => $argv{e} if defined $argv{e};
+	push @td_args, socket => $argv{d} if defined $argv{d};
+	my $td = new Test::Daemon(@td_args);
+
+	if (defined fileno PIPE_W) {
+		print PIPE_W "STARTED\n";
+		close PIPE_W;
+	}
+
+	my $cv = AE::cv();
+	$cv->recv;
+}
+
+sub HELP_MESSAGE {
+	my $out = shift;
+
+	print $out <<EOM;
+Options:
+  -f file .... Read configuration from 'file'.
+  -d socket .. Listen on 'socket' (UNIX or TCP).
+  -e num ..... Exit if there is nothing to do and at least num jobs were run.
+  -D ......... Daemonize to background
+
+Variables:
+  TEST_DAEMON_CONFIG .. Configuration file specified in this variable is used,
+                        if parameter -f is not used.
+EOM
+}
+
+
+# Parse options
+local $Getopt::Std::STANDARD_HELP_VERSION = 1;
+getopts('e:f:d:D', \%argv) || exit 1;
+
+if (@ARGV) {
+	printf STDERR "Unknown argument: $ARGV[0]\n";
+	exit 1;
+}
+
+$ENV{TEST_DAEMON_CONFIG} = $argv{f} if defined $argv{f};
+
+# Start test Daemon
+if (defined $argv{D}) {
+	pipe PIPE_R, PIPE_W;
+
+	my $pid = daemonize \&daemon; 
+	my $fail = sub {
+		kill 9, $pid;
+		print STDERR $_[0];
+		exit 9;
+	};
+
+	close PIPE_W;
+
+	# Wait for daemon
+	my $flags = '';
+	fcntl(PIPE_R, F_GETFL, $flags) or $fail->("Couldn't get flags for HANDLE : $!\n");
+	$flags |= O_NONBLOCK;
+	fcntl(PIPE_R, F_SETFL, $flags) or $fail->("Couldn't set flags for HANDLE: $!\n");
+
+	my $rin = '';
+	vec($rin, fileno PIPE_R, 1) = 1;
+	if (0 < select $rin, undef, $rin, 4) {
+		my $line = '';
+
+		defined(sysread PIPE_R, $line, 10) or $fail->("Failed reading from pipe $!\n");
+		exit 0 if ($line =~ /STARTED/);
+	} 
+	$fail->("Failed to start TD\n");
+} else {
+	daemon;
+}
+

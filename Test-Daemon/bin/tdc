@@ -1,0 +1,151 @@
+#!/usr/bin/env perl
+use strict;
+
+use Test::Daemon::Common qw(expand_vars);
+
+use AnyEvent;
+use AnyEvent::Socket;
+use AnyEvent::Handle;
+use Getopt::Std;
+use JSON;
+
+sub HELP_MESSAGE {
+	my $out = shift;
+
+	print $out <<EOM;
+Options:
+  -d socket ... Socket on which Test::Daemon is listening.
+  -m file ..... Send message specified in 'file' and write response on stdout.
+  -M file ..... Send message specified in 'file' and write response on stdout.
+                Expand environment variables found in file.
+  -r testset .. Run specified test set.
+  -w job_id ... Wait for job 'job_id' to finish.
+  -s .......... Print Test::Daemon status.
+  -t timeout .. How long to wait for response.
+EOM
+}
+
+my @exclusive = qw(m M r s w);
+my %argv = (
+	-d => '/var/run/td.sock',
+	-t => 0,
+);
+local $Getopt::Std::STANDARD_HELP_VERSION = 1;
+getopts('d:M:m:sr:t:w:', \%argv) || exit 1;
+
+if (1 != grep {my $a = $_; grep {$_ eq $a} @exclusive} keys %argv) {
+	$" = ', -';
+	print STDERR "Exactly one of -@exclusive options can be used at a time.\n";
+	exit 1;
+}
+
+# Compose request
+my $request;
+if (defined $argv{m} || defined $argv{M}) {
+	my $file = $argv{m} || $argv{M};
+	my @input;
+
+	if ('-' eq $file) {
+		@input = <STDIN>;
+	} else {
+		unless (open INPUT, '<', $file) {
+			print STDERR "Failed to open '$file': $!\n";
+			exit 2;
+		}
+		@input = <INPUT>;
+		close INPUT;
+	}
+
+	@input = grep {not /^\s*\/\//} @input;
+	if (defined $argv{M}) {
+		@input = map expand_vars($_), @input;
+	} 
+
+	unless (from_json(join "\n", @input)) {
+		printf STDERR "Invalid JSON\n";
+		exit 7;
+	}
+
+	$request = join '', @input;
+}
+
+if (defined $argv{s}) {
+	$request = '{"status": []}';
+}
+
+if (defined $argv{w}) {
+	$request = '{"wait": [' . $argv{w} . ']}';
+}
+
+if (defined $argv{r}) {
+	my @testsets = split /\s+/, $argv{r};
+	$request = to_json({
+		run => [
+			testsets_to_run => \@testsets,
+		]
+	});
+}
+
+# Send request and wait for reply with timeout
+my $timer;
+if ($argv{t} > 0) {
+	$timer = AE::timer $argv{t}, 0, sub {
+		print STDERR "Timeout expired\n";
+		exit 3;
+	}
+}
+
+my ($host, $service) = parse_hostport $argv{d};
+unless (defined $host) {
+	print STDERR "Invalid socket definition '$argv{d}'.\n";
+	exit 4;
+}
+
+my $cond = AE::cv;
+my $handle;
+tcp_connect $host, $service, sub {
+	my $fh = shift;
+	unless (defined $fh) {
+		print STDERR "Connection failed\n";
+		exit 6
+	}
+
+	$handle = new AnyEvent::Handle(
+		fh => $fh,
+		on_read => sub {
+			$handle->push_read(json => sub {
+				$cond->send($_[1]);
+			});
+		},
+		on_eof => sub {
+			$cond->croak("Unexpected end of connection");
+		},
+		on_error => sub {
+			$cond->croak("Error on connection");
+		}
+	);
+	$handle->push_write($request);
+};
+
+# Handle reply
+my $response;
+eval {
+	$response = $cond->recv;
+}; if ($@) {
+	print STDERR "$@.\n";
+	exit 5;
+}
+
+if (defined $response->{error}) {
+	print STDERR "Error: $response->{error}{number}.\n";
+	print STDERR "Message: $response->{error}{message}.\n";
+	exit $response->{error}{number};
+}
+
+if (defined $argv{r}) {
+	print $response->{ok}{id}, "\n";
+	exit 0;
+}
+
+print to_json($response, { pretty => 1 });
+exit 0;

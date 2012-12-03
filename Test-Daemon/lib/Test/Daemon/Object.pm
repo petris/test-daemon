@@ -1,5 +1,8 @@
 package Test::Daemon::Object;
 use strict;
+
+use Test::Daemon::Common qw(expand_vars);
+
 use Carp qw(croak cluck);
 use JSON;
 
@@ -35,7 +38,7 @@ sub initialize {
 		}
 	}
 
-	if (defined $ENV{TESTD_DEBUG} and $ENV{TESTD_DEBUG} > 2) {
+	if (defined $ENV{TEST_DAEMON_DEBUG} and $ENV{TEST_DAEMON_DEBUG} > 2) {
 		my $init = join ', ', map "$_=>" . (defined $args{$_} ? $args{$_} : 'undef'), sort keys %args;
 		$self->log("Initializing $self as $ref. ARGS: $init");
 	}
@@ -53,44 +56,26 @@ sub copy_args {
 	$self->{$_} = $args{$_} foreach keys %args;
 }
 
-sub expand_vars($) {
-	my $line = shift;
-	my $expanded = '';
-
-	while ($line =~ /^(.*?)\$\{(\w*)\}(.*)$/o) {
-		$expanded .= $1;
-		if ($2 eq '') {
-			$expanded .= '$';
-		} elsif (defined $ENV{$2}) {
-			$expanded .= $ENV{$2};
-		}
-		$line = $3;
-	}
-	$expanded .= $line;
-
-	return $expanded;
-}
-
 sub loadconf {
-	if (defined $ENV{TESTD_CONFIG}) {
+	if (defined $ENV{TEST_DAEMON_CONFIG}) {
 		my $config_dir;
-		if ($ENV{TESTD_CONFIG} =~ /^\//) {
-			$config_dir = $ENV{TESTD_CONFIG};
+		if ($ENV{TEST_DAEMON_CONFIG} =~ /^\//) {
+			$config_dir = $ENV{TEST_DAEMON_CONFIG};
 		} else {
-			$config_dir = $ENV{PWD} . '/' . $ENV{TESTD_CONFIG};
+			$config_dir = $ENV{PWD} . '/' . $ENV{TEST_DAEMON_CONFIG};
 		}
 		$config_dir =~ s/[^\/]*$//;
-		$ENV{TESTD_CONFIG_DIR} = $config_dir;
+		$ENV{TEST_DAEMON_CONFIG_DIR} = $config_dir;
 
-		open F, $ENV{TESTD_CONFIG} or croak 'Failed to load config file';
+		open F, $ENV{TEST_DAEMON_CONFIG} or croak 'Failed to load config file';
 		$config = from_json(join '', map expand_vars($_), grep {not /^\s*\/\//} <F>);
 		close F;
-		if (defined $ENV{TESTD_DEBUG} and $ENV{TESTD_DEBUG} > 0) {
-			Test::Daemon::Object::log(0, 'Loaded config file ', $ENV{TESTD_CONFIG});
+		if (defined $ENV{TEST_DAEMON_DEBUG} and $ENV{TEST_DAEMON_DEBUG} > 0) {
+			Test::Daemon::Object::log(0, 'Loaded config file ', $ENV{TEST_DAEMON_CONFIG});
 		}
 	} else {
 		$config = {};
-		if (defined $ENV{TESTD_DEBUG} and $ENV{TESTD_DEBUG} > 0) {
+		if (defined $ENV{TEST_DAEMON_DEBUG} and $ENV{TEST_DAEMON_DEBUG} > 0) {
 			Test::Daemon::Object::log(0, 'No config file defined');
 		}
 	}
@@ -100,25 +85,25 @@ sub log {
 	my $self = shift;
 	my $prefix = '';
 
-	if (defined $ENV{TESTD_DEBUG}) {
+	if (defined $ENV{TEST_DAEMON_DEBUG}) {
 		my @context = caller 1;
-		$prefix .= $context[0] . ' ' if $ENV{TESTD_DEBUG} > 1;
-		$prefix .= $context[3] . ' ' if $ENV{TESTD_DEBUG} > 2;
-		$prefix .= $context[2] . ' ' if $ENV{TESTD_DEBUG} > 3;
-		$prefix .= $context[1] . ' ' if $ENV{TESTD_DEBUG} > 4;
-		print $prefix, @_, "\n" if $ENV{TESTD_DEBUG} > 0;
+		$prefix .= $context[0] . ' ' if $ENV{TEST_DAEMON_DEBUG} > 1;
+		$prefix .= $context[3] . ' ' if $ENV{TEST_DAEMON_DEBUG} > 2;
+		$prefix .= $context[2] . ' ' if $ENV{TEST_DAEMON_DEBUG} > 3;
+		$prefix .= $context[1] . ' ' if $ENV{TEST_DAEMON_DEBUG} > 4;
+		print $prefix, @_, "\n" if $ENV{TEST_DAEMON_DEBUG} > 0;
 	}
 }
 
 sub err {
 	my $self = shift;
 	if ($_[0] eq 'CRITICAL') {
-		local $ENV{TESTD_DEBUG} = 99;
+		local $ENV{TEST_DAEMON_DEBUG} = 99;
 		$self->log("Critical error ocurred");
 		shift;
 	}
 	#$Carp::Internal{'Test::Daemon::Object'}++;
-	if (defined $ENV{TESTD_DEBUG} && $ENV{TESTD_DEBUG} > 2) {
+	if (defined $ENV{TEST_DAEMON_DEBUG} && $ENV{TEST_DAEMON_DEBUG} > 2) {
 		cluck @_;
 	} else {
 		croak @_;
@@ -187,7 +172,7 @@ Usage example:
 
 This class provides a constructor, which check if mandatory arguments are 
 present (specified in @MANDATORY_ARGS), reads unspecified arguments from
-configuration file, which filename is store in TESTD_CONFIG environment 
+configuration file, which filename is store in TEST_DAEMON_CONFIG environment 
 variable, and then calls init method.
 
 If the init method is not present, it simply copies arguments to the 

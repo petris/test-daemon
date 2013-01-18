@@ -53,7 +53,7 @@ use AnyEvent::Util;
 use AnyEvent;
 use Carp;
 
-our @proc_args = qw(fh_table code on_completion args watchdog_interval on_watchdog kill_interval on_kill);
+our @proc_args = qw(fh_table code on_completion args watchdog_interval on_watchdog kill_interval on_kill close_all_fds_except);
 our $VERSION = '0.01';
 
 sub new {
@@ -216,6 +216,16 @@ sub run {
 			close $dup->[0];
 		}
 
+		# Close other filedescriptors
+		if (defined $proc_args{close_all_fds_except}) {
+			my @not_close = map fileno($_), @{$proc_args{close_all_fds_except}};
+			AE::log trace => "Closing all other fds except: " . join ', ', @not_close;
+			push @not_close, fileno $_->[0] foreach @fh_table;
+
+			AE::log trace => "Closing all other fds except: " . join ', ', @not_close;
+			AnyEvent::Util::close_all_fds_except @not_close;
+		}
+
 		# Run the code
 		my $rtn = $proc_args{code}->(@{$proc_args{args} // []});
 		exit ($rtn eq int($rtn) ? $rtn : 1);
@@ -308,7 +318,7 @@ sub kill {
 	my ($self, $signal) = @_;
 
 	croak 'No process was started' unless defined $self->{job};
-	return $self->{job}->kill($signal);
+	return $self->{job}->kill($signal // 15);
 }
 
 sub pid {

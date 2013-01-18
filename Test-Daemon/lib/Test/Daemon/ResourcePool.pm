@@ -18,17 +18,21 @@ sub init {
 	$self->{wait_for_job} = AE::cv;
 	
 	while (my ($name, $prop) = each %{$args{resources}}) {
-		my $res = new Test::Daemon::Resource(name => $name, provides => $prop->{provides}, variables => $prop->{variables});
+		my $res = new Test::Daemon::Resource(name => $name, provides => $prop->{provides}, variables => $prop->{variables}, pool => $self);
 		push @{$self->{resources}}, $res;
 	}
 
 	return $self;
 }
 
-sub filter_providers($$) {
-	my ($self, $resources) = @_;
+sub filter_providers {
+	my ($self, $resources, $broken) = @_;
 	
-	return grep $_->provides(@{$resources}), @{$self->{resources}}; 
+	if ($broken) {
+		return grep $_->provides(@{$resources}), @{$self->{resources}};
+	} else {
+		return grep {$_->is_broken == 0 and $_->provides(@{$resources})} @{$self->{resources}};
+	}
 }
 
 sub _try_get_resources {
@@ -61,11 +65,11 @@ sub try_get_resources($$$) {
 	
 	# Check, if it is possible to alloc
 	while (my ($name, $resources) = each %$exclusive) {
-		$alloc->{$name} = [$self->filter_providers($resources)];
+		$alloc->{$name} = [$self->filter_providers($resources, 1)];
 	}
 	while (my ($name, $resources) = each %$shared) {
 		$self->err("Resource $name is specified both shared and exclusive") if defined $alloc->{$name};
-		$alloc->{$name} = [$self->filter_providers($resources)];
+		$alloc->{$name} = [$self->filter_providers($resources, 1)];
 	}
 
 	# Try to alloc
@@ -107,6 +111,10 @@ sub free_resources {
 	} else {
 		map $_->free(), @_;
 	}
+}
+
+sub reschedule {
+	$_[0]->{wait_for_job}->send();
 }
 
 sub process_jobs($$$) {

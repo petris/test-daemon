@@ -5,7 +5,7 @@ use Test::Daemon::Object;
 use Test::Daemon::Environment;
 
 our @ISA = qw(Test::Daemon::Object);
-our @MANDATORY_ARGS = qw(environment name testjobs);
+our @MANDATORY_ARGS = qw(environment name testjobs runner);
 
 sub init {
 	my $self = shift;
@@ -39,6 +39,7 @@ sub run($$$) {
 			name        => "$self->{name}/$num");
 
 		last RUN if $env->do_steps('deploy', $resources);
+		last RUN if $self->{runner}{cancelling};
 
 		# Run testcases, use environment resources
 		my $rp = new Test::Daemon::ResourcePool(resources => $self->{environment}{provided_resources});
@@ -60,7 +61,7 @@ sub more_to_do($$) {
 
 	$self->log("Job $self->{name} has $tc_count testcases to run, currently running in $self->{num} instances.");
 
-	if ($tc_count == 0) {
+	if ($tc_count == 0 || $self->{runner}{cancelling}) {
 		return -1;
 	} else {
 		return $self->{num} < $tc_count && $self->{tries} < $self->{tries_max};

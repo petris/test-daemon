@@ -183,11 +183,13 @@ sub on_msg_status {
 
 	my %status = ( 
 		runners => {},
+		resources => {},
 		time => time,
 		pid => $$,
 	);
 
 	$status{exit_after} = $self->{exit_after} if defined $self->{exit_after};
+	
 	foreach my $runner_id (keys %{$self->{runners}}) {
 		my $runner = $self->{runners}{$runner_id};
 		$status{runners}{$runner_id} = {
@@ -195,6 +197,14 @@ sub on_msg_status {
 			name  => $runner->{name},
 			pass  => $runner->{pass},
 			fail  => $runner->{fail},
+			cancelling  => $runner->{cancelling} // 0,
+		};
+	}
+	
+	foreach my $resource (@{$self->{provided_resources}{resources}}) {
+		$status{resources}{$resource->{name}} = {
+			counter => $resource->{counter},
+			broken  => $resource->{broken},
 		};
 	}
 
@@ -211,6 +221,17 @@ sub on_msg_wait {
 	push @{$self->{runners}{$job_id}{tdc_waiters}}, $HANDLE;
 
 	return undef;
+}
+
+sub on_msg_cancel {
+	my ($self, $job_id) = @_;
+
+	unless (defined $self->{runners}{$job_id}) {
+		return error => { number => -9, message => "Job id '$job_id' is not running" };
+	}
+
+	$self->{runners}{$job_id}->cancel();
+	return ok => { message => 'Cancelling in progress' };
 }
 
 sub on_msg_quit {

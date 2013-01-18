@@ -4,7 +4,7 @@ use strict;
 use Test::Daemon::Object;
 
 our @ISA = qw(Test::Daemon::Object);
-our @MANDATORY_ARGS = qw(tc loggers);
+our @MANDATORY_ARGS = qw(tc loggers runner);
 
 sub init {
 	my $self = shift;
@@ -25,6 +25,8 @@ sub pre_run {
 sub run ($$$) {
 	my ($self, $resources, $env) = @_;
 
+	return if $self->{runner}{cancelling};
+
 	$self->{resources} = {%{$env->{resources}}, %$resources};
 	$self->{log_dir}   = File::Temp->newdir();
 
@@ -32,28 +34,30 @@ sub run ($$$) {
 
 	# prerun
 	return if $env->do_steps('prerun', $self->{resources}, $self->{tc});
+	return if $self->{runner}{cancelling};
 
 	# run
 	$self->{started}   = time;
 	$self->{result}    = $env->deployments_do($self->{resources}, 'run', 1, $self->{tc});
 	$self->{completed} = time;
+	return if $self->{runner}{cancelling};
 
-	if (defined $self->{runner}) {
-		if ($self->{result}) {
-			$self->{runner}{fail}++;
-		} else {
-			$self->{runner}{pass}++;
-		}
+	if ($self->{result}) {
+		$self->{runner}{fail}++;
+	} else {
+		$self->{runner}{pass}++;
 	}
 
 	# precollect
 	return if $env->do_steps('precollect', $self->{resources}, $self->{tc}, $self->{result});
+	return if $self->{runner}{cancelling};
 
 	# collect
 	$self->{info} = {$env->collect_info($self->{tc}, $self->{result}, $self->{log_dir}->dirname())};
 
 	# postcollect
 	return if $env->do_steps('postcollect', $self->{resources}, $self->{tc}, $self->{result});
+	return if $self->{runner}{cancelling};
 
 	$self->{finished} = 1;
 	$self->log("Finnished TC $self->{tc}{name}");

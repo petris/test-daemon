@@ -116,6 +116,12 @@ sub run {
 	$self->log_testset('testset_done');
 }
 
+sub cancel {
+	my $self = shift;
+
+	$self->{cancelling} = 1;
+}
+
 1;
 
 __END__

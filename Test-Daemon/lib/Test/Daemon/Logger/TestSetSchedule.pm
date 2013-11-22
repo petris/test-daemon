@@ -78,7 +78,10 @@ sub testset_done {
 		$idx++;
 	}
 
-	open OUT, '>', $self->{filename};
+	my $filename = $self->{filename};
+	$filename =~ s/%s/$testset/g;
+
+	open OUT, '>', $filename;
 	print OUT "<html>
 	<head>
 		<style type=\"text/css\">

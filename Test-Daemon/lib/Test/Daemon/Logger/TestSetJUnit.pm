@@ -51,8 +51,10 @@ sub testset_done {
 	my $testset = shift;
 	my $tsi = $self->{testsets}{$testset};
 	my $time = time - $tsi->{start};
+	my $filename = $self->{filename};
 
-	open OUT, '>', $self->{filename};
+	$filename =~ s/%s/$testset/g;
+	open OUT, '>', $filename;
 
 	print OUT "<testsuite name=\"$testset\" tests=\"$tsi->{tests}\" failures=\"$tsi->{failures}\" errors=\"$tsi->{errors}\" timestamp=\"$tsi->{timestamp}\" hostname=\"localhost\" time=\"$time\">\n";
 	print OUT "\t<properties>\n";

@@ -58,7 +58,7 @@ sub init {
 		$self->err('CRITICAL', "Test set $ts_name is not defined") unless defined $ts;
 
 		foreach my $env ($ts->get_environments()) {
-			$self->{environment_testcases}{$env} = [$ts->get_environment_testcases($env)];
+			push @{$self->{environment_testcases}{$env}}, $ts->get_environment_testcases($env);
 		}
 	}
 	$self->{total} = List::Util::sum(map {scalar @$_} values %{$self->{environment_testcases}});

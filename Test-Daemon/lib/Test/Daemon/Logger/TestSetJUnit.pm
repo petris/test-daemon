@@ -1,6 +1,7 @@
 package Test::Daemon::Logger::TestSetJUnit;
 use strict;
 
+use File::Temp;
 use POSIX qw(strftime);
 use Test::Daemon::Common qw(get_file);
 use Test::Daemon::Object;
@@ -41,6 +42,11 @@ sub log_info($$$) {
 				if (-f $file) {
 					$self->{testsets}{$testset}{info}{$name}{$sn} = get_file $file;
 				}
+			} elsif (defined $self->{'system_' . $stream . '_attr'}) {
+				$self->{testsets}{$testset}{info}{$name}{$sn} = mktemp('TestDaemon-XXXXX');
+				open OUT, '>', $self->{testsets}{$testset}{info}{$name}{$sn};
+				print OUT $info->{$self->{'system_' . $stream . '_attr'}};
+				close OUT;
 			}
 		}
 	}

@@ -121,9 +121,10 @@ sub process_jobs($$$) {
 	my ($self, $remaining, $arg) = @_;
 
 	my @jobs;
-	while (@$remaining) {
+	$self->{running} = 1;
+	while (@$remaining and $self->{running}) {
 		my $started = 0;
-		for (my $index = $#$remaining; $index >= 0; --$index) {
+		for (my $index = $#$remaining; $index >= 0 and $self->{running}; --$index) {
 			my $job = $remaining->[$index];
 			my $resources = $self->try_get_resources($job->get_exclusive($arg), $job->get_shared($arg));
 			next unless defined $resources;
@@ -163,6 +164,13 @@ sub process_jobs($$$) {
 
 	$_->join() foreach @jobs;
 }
+
+sub stop {
+	my $self = shift;
+
+	$self->{running} = 0;
+}
+
 
 1;
 

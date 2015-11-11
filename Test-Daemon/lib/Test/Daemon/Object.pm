@@ -99,7 +99,7 @@ sub err {
 	my $self = shift;
 	if ($_[0] eq 'CRITICAL') {
 		local $ENV{TEST_DAEMON_DEBUG} = 99;
-		$self->log("Critical error ocurred");
+		$self->log("Critical error ocurred" . join ' ', @_);
 		shift;
 	}
 	#$Carp::Internal{'Test::Daemon::Object'}++;

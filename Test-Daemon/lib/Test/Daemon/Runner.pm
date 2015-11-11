@@ -120,6 +120,9 @@ sub cancel {
 	my $self = shift;
 
 	$self->{cancelling} = 1;
+	if (defined $self->{resources}) {
+		$self->{resources}->stop();
+	}
 }
 
 1;
